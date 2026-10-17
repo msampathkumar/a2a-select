@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -413,7 +414,19 @@ func (a *App) chatLoop(ctx context.Context, card cards.StoredCard, conv *session
 			continue
 		}
 
-		if strings.HasPrefix(msg, "/") {
+		var files []string
+		if strings.HasPrefix(msg, "/file ") || strings.HasPrefix(msg, "/attach ") {
+			parts := strings.Fields(msg)
+			if len(parts) < 2 {
+				a.printf("  ! Usage: /file <path> [message]\n")
+				continue
+			}
+			files = append(files, parts[1])
+			msg = strings.TrimSpace(strings.Join(parts[2:], " "))
+			if msg == "" {
+				msg = "Attached file: " + filepath.Base(parts[1])
+			}
+		} else if strings.HasPrefix(msg, "/") {
 			done, err := a.handleSlashCommand(ctx, msg, card, conv)
 			if err != nil {
 				a.printf("  ! Error: %v\n", err)
@@ -437,6 +450,7 @@ func (a *App) chatLoop(ctx context.Context, card cards.StoredCard, conv *session
 			ContextID: ctxID,
 			TaskID:    taskID,
 			Message:   msg,
+			Files:     files,
 			Auth:      auth,
 		})
 		if err != nil {
@@ -468,10 +482,11 @@ func (a *App) handleSlashCommand(ctx context.Context, cmd string, card cards.Sto
 		return true, nil
 	case "/help", "/h", "/?":
 		a.printf("  Available commands:\n")
-		a.printf("    /status  Show current agent card, Context ID, and Task ID state\n")
-		a.printf("    /tasks   Query the agent for all tasks in the current Context ID\n")
-		a.printf("    /new     Start a fresh conversation context with %s\n", card.Card.Name)
-		a.printf("    /exit    Exit the session and print continuation commands\n")
+		a.printf("    /file <path> [msg]  Attach a file part to your message turn\n")
+		a.printf("    /status             Show current agent card, Context ID, and Task ID state\n")
+		a.printf("    /tasks              Query the agent for all tasks in the current Context ID\n")
+		a.printf("    /new                Start a fresh conversation context with %s\n", card.Card.Name)
+		a.printf("    /exit               Exit the session and print continuation commands\n")
 		return false, nil
 	case "/status", "/info":
 		a.printf("  Agent:          %s (v%s)\n", card.Card.Name, card.Card.Version)

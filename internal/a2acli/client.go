@@ -3,6 +3,7 @@ package a2acli
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -94,6 +95,7 @@ type SendRequest struct {
 	ContextID string
 	TaskID    string
 	Message   string
+	Files     []string
 	Auth      string
 }
 
@@ -164,8 +166,8 @@ func (r *CLIRunner) Send(ctx context.Context, req SendRequest) (*SendResult, err
 	if strings.TrimSpace(req.CardRef) == "" {
 		return nil, errors.New("card reference is required")
 	}
-	if strings.TrimSpace(req.Message) == "" {
-		return nil, errors.New("message text is required")
+	if strings.TrimSpace(req.Message) == "" && len(req.Files) == 0 {
+		return nil, errors.New("message text or file part is required")
 	}
 	args := []string{"send", "-a", req.CardRef, "-o", "json"}
 	if strings.TrimSpace(req.Auth) != "" {
@@ -177,7 +179,14 @@ func (r *CLIRunner) Send(ctx context.Context, req SendRequest) (*SendResult, err
 	if strings.TrimSpace(req.TaskID) != "" {
 		args = append(args, "--task-id", req.TaskID)
 	}
-	args = append(args, "--text-part", req.Message)
+	if strings.TrimSpace(req.Message) != "" {
+		args = append(args, "--text-part", req.Message)
+	}
+	for _, f := range req.Files {
+		if strings.TrimSpace(f) != "" {
+			args = append(args, "--file-part", strings.TrimSpace(f))
+		}
+	}
 
 	out, err := r.exec(ctx, args...)
 	if err != nil {
@@ -244,6 +253,7 @@ func extractCLIError(stdout, stderr []byte) string {
 
 type rawPart struct {
 	Text      string         `json:"text,omitempty"`
+	Raw       string         `json:"raw,omitempty"`
 	URL       string         `json:"url,omitempty"`
 	Filename  string         `json:"filename,omitempty"`
 	MediaType string         `json:"mediaType,omitempty"`
@@ -362,6 +372,22 @@ func extractPartsText(parts []rawPart) string {
 	for _, p := range parts {
 		if p.Text != "" {
 			out = append(out, p.Text)
+			continue
+		}
+		if p.Raw != "" {
+			label := p.Filename
+			if label == "" {
+				label = "attachment"
+			}
+			mtype := p.MediaType
+			if mtype == "" {
+				mtype = "application/octet-stream"
+			}
+			decodedLen := len(p.Raw)
+			if b, err := base64.StdEncoding.DecodeString(p.Raw); err == nil {
+				decodedLen = len(b)
+			}
+			out = append(out, fmt.Sprintf("[file: %s (%s, %d bytes)]", label, mtype, decodedLen))
 			continue
 		}
 		if p.URL != "" {
