@@ -235,4 +235,3 @@ exit 1
 		t.Fatalf("ListTasks() error = %v, want message containing 'operation not supported'", err)
 	}
 }
-
